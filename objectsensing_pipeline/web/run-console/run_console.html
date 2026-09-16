@@ -1,0 +1,403 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>ObjectSensing Run Console</title>
+  <link rel="stylesheet" href="/run_console.css">
+  <link rel="stylesheet" href="/ui_shared.css">
+  <script src="/vendor/lucide/lucide.min.js"></script>
+  <script type="importmap">{"imports":{"three":"/vendor/three/three.module.js","three/addons/":"/vendor/three/addons/"}}</script>
+</head>
+<body>
+  <div class="app workflow-collapsed inspector-collapsed" id="app">
+    <header class="topbar ui-topbar">
+      <div class="brand">
+        <button class="icon-button" id="toggle-workflow" type="button" aria-label="Collapse playlist" data-tooltip="Execution playlist" data-tooltip-detail="Hover over the rail to preview; click to keep the panel open.">
+          <i data-lucide="panel-left"></i>
+        </button>
+        <span class="brand-mark" aria-hidden="true"><i></i><i></i><i></i><i></i></span>
+        <div class="brand-copy"><strong>ObjectSensing</strong><span id="run-name">New run</span></div>
+      </div>
+      <div class="run-summary" aria-live="polite">
+        <span class="state-dot idle" id="state-dot"></span>
+        <div><strong id="run-status">Ready</strong><span id="run-context">No active run</span></div>
+      </div>
+      <div class="top-actions">
+        <a class="button subtle" href="/debug" data-tooltip="Debug Visualizer" data-tooltip-detail="Compare internal pipeline stages across several scenes."><i data-lucide="bug"></i><span>Debug</span></a>
+        <button class="button subtle" id="stop-run" type="button" disabled><i data-lucide="square"></i><span>Stop</span></button>
+        <button class="button primary" id="start-run" type="button"><i data-lucide="play"></i><span>Run</span></button>
+        <button class="icon-button" id="toggle-inspector" type="button" aria-label="Collapse inspector" data-tooltip="Inspector" data-tooltip-detail="Parameters, candidates and previous runs."><i data-lucide="panel-right"></i></button>
+      </div>
+    </header>
+
+    <main class="workspace">
+      <aside class="workflow-panel ui-panel" id="workflow-panel">
+        <div class="panel-title-row">
+          <div><span class="eyebrow">Execution</span><h1>Playlist</h1></div>
+          <div class="segmented" role="group" aria-label="Execution mode">
+            <button type="button" class="segment active" data-mode="playlist">List</button>
+            <button type="button" class="segment" data-mode="manual">Manual</button>
+          </div>
+        </div>
+        <ol class="playlist" id="playlist"></ol>
+        <div class="workflow-footer">
+          <div class="resume-context" id="resume-context" hidden>
+            <div><span>Loaded run</span><strong id="resume-label"></strong><small id="resume-stage"></small></div>
+            <button class="icon-button compact" id="detach-run" type="button" aria-label="Detach this run" data-tooltip="New run" data-tooltip-detail="Leave this context without deleting or modifying the saved run."><i data-lucide="x"></i></button>
+          </div>
+          <label class="switch-row"><input id="reuse-run" type="checkbox" checked><span class="switch"></span><span>Resume if identical</span></label>
+          <p class="dependency-policy"><i data-lucide="database-zap"></i><span>Prerequisites are added automatically. Compatible fused scenes and matching batches are restored from the run cache.</span></p>
+          <button class="button primary block" id="start-run-secondary" type="button"><i data-lucide="list-start"></i><span>Run playlist</span></button>
+        </div>
+        <div class="panel-resizer workflow-resizer ui-resizer" id="workflow-resizer" role="separator" aria-label="Resize playlist" aria-orientation="vertical" tabindex="0" data-tooltip="Playlist width" data-tooltip-detail="Drag horizontally or use the left and right arrow keys."></div>
+      </aside>
+
+      <section class="scene-shell" aria-label="Live 3D visualization">
+        <div class="scene ui-scene" id="scene">
+          <div class="scene-empty" id="scene-empty"><i data-lucide="scan-line"></i><strong>Scene ready</strong><span>Waiting for an RGB-D stream</span></div>
+          <div class="scene-hud top-left ui-scene-badge">
+            <span class="stage-chip" id="stage-chip">Ready</span>
+            <strong id="scene-title">No geometry loaded</strong>
+            <span id="scene-subtitle">0 points · 0 candidates</span>
+          </div>
+          <div class="scene-tools ui-scene-toolbar" aria-label="Visualization layers">
+            <button class="tool-button ui-layer-toggle active" type="button" data-layer="fusion" aria-pressed="true" data-tooltip="RGB-D measurements" data-tooltip-detail="Points added by depth frames and the camera trajectory."><i data-lucide="camera"></i></button>
+            <button class="tool-button ui-layer-toggle active" type="button" data-layer="surface" aria-pressed="true" data-tooltip="Surface TSDF" data-tooltip-detail="Surface reconstructed from the fused volume."><i data-lucide="cloud"></i></button>
+            <button class="tool-button ui-layer-toggle active" type="button" data-layer="keypoints-detected" aria-pressed="true" data-tooltip="Detected keypoints" data-tooltip-detail="All local maxima before capping, deduplication and spatial balancing."><i data-lucide="scan-search"></i></button>
+            <button class="tool-button ui-layer-toggle active" type="button" data-layer="keypoints-retained" aria-pressed="true" data-tooltip="Retained keypoints" data-tooltip-detail="The subset actually passed to descriptors and constellation matching."><i data-lucide="crosshair"></i></button>
+            <button class="tool-button ui-layer-toggle active" type="button" data-layer="candidates" aria-pressed="true" data-tooltip="Candidates" data-tooltip-detail="Tested, placed or retained ShapeNet models."><i data-lucide="armchair"></i></button>
+            <span class="tool-separator"></span>
+            <button class="tool-button ui-layer-toggle" id="reset-camera" type="button" data-tooltip="Reset camera"><i data-lucide="focus"></i></button>
+          </div>
+          <div class="scene-hud bottom-left legend ui-scene-legend left">
+            <span class="ui-legend-item"><i class="swatch rgb ui-legend-dot"></i>RGB-D</span>
+            <span class="ui-legend-item"><i class="swatch surface ui-legend-dot"></i>TSDF</span>
+            <span class="ui-legend-item"><i class="swatch keypoint-detected ui-legend-dot"></i>Detected KP</span>
+            <span class="ui-legend-item"><i class="swatch keypoint-retained ui-legend-dot"></i>Retained KP</span>
+            <span class="ui-legend-item"><i class="swatch candidate ui-legend-dot"></i>Candidate</span>
+            <span class="ui-legend-item"><i class="swatch selected ui-legend-dot"></i>Retained</span>
+          </div>
+          <div class="scene-hud keypoint-compare" id="keypoint-compare" hidden>
+            <header><span>Keypoint filtering</span><strong id="keypoint-ratio">—</strong></header>
+            <div class="keypoint-stat detected">
+              <span><i></i>Detected</span><strong id="keypoint-detected-count">0</strong>
+              <b><i></i></b>
+            </div>
+            <div class="keypoint-stat retained">
+              <span><i></i>Retained</span><strong id="keypoint-retained-count">0</strong>
+              <b><i id="keypoint-retained-bar"></i></b>
+            </div>
+            <p id="keypoint-compare-note"></p>
+          </div>
+          <div class="candidate-focus" id="candidate-focus" hidden>
+            <button class="icon-button inverse" id="close-focus" type="button" aria-label="Close"><i data-lucide="x"></i></button>
+            <span id="focus-status">Candidate</span><strong id="focus-name"></strong><small id="focus-metrics"></small>
+          </div>
+        </div>
+
+        <div class="timeline-strip ui-panel">
+          <div class="timeline-resizer ui-resizer" id="timeline-resizer" role="separator" aria-label="Resize timeline" aria-orientation="horizontal" tabindex="0" data-tooltip="Timeline height" data-tooltip-detail="Drag vertically or use the up and down arrow keys."></div>
+          <div class="timeline-head">
+            <div class="timeline-title"><span class="timeline-mode live" id="timeline-mode">LIVE</span><div><strong id="phase-label">Pipeline</strong><span id="phase-detail">Ready to start</span></div></div>
+            <div class="timeline-actions">
+              <span id="elapsed-time">00:00:00</span>
+              <button class="icon-button compact" id="toggle-logs" type="button" aria-label="Show logs" data-tooltip="Log"><i data-lucide="terminal"></i></button>
+            </div>
+          </div>
+          <div class="phase-track" id="phase-track">
+            <button type="button" data-phase="fusion" data-tooltip="RGB-D fusion" data-tooltip-detail="Accumulate depth frames in a common TSDF volume."><i data-lucide="layers-3"></i><span>Fusion</span><b></b></button>
+            <button type="button" data-phase="keypoints" data-tooltip="Keypoint detection" data-tooltip-detail="Retain distinctive local points distributed across space."><i data-lucide="crosshair"></i><span>Keypoints</span><b></b></button>
+            <button type="button" data-phase="query" data-tooltip="Top-k query" data-tooltip-detail="Compare the scene descriptor with the index and rank plausible models."><i data-lucide="list-filter"></i><span>Top-k</span><b></b></button>
+            <button type="button" data-phase="matching" data-tooltip="Constellation matching" data-tooltip-detail="Test keypoint correspondences and estimate pose, orientation and scale."><i data-lucide="waypoints"></i><span>Matching</span><b></b></button>
+            <button type="button" data-phase="verification" data-tooltip="Volumetric verification" data-tooltip-detail="Measure coverage, reverse consistency and scene conflicts."><i data-lucide="badge-check"></i><span>Verification</span><b></b></button>
+            <button type="button" data-phase="selection" data-tooltip="Global selection" data-tooltip-detail="Choose a consistent set without duplicates or excessive overlap."><i data-lucide="check-check"></i><span>Selection</span><b></b></button>
+          </div>
+          <div class="stage-insight" id="stage-insight" aria-live="polite">
+            <div class="stage-insight-icon" id="stage-insight-icon"><i data-lucide="route"></i></div>
+            <div class="stage-insight-copy">
+              <span id="insight-kicker">Overview</span>
+              <strong id="insight-title">Pipeline ready</strong>
+              <p id="insight-summary">Start or load a run to follow each transformation of the scene.</p>
+            </div>
+            <div class="stage-flow" aria-label="Stage flow">
+              <span><small>Input</small><b id="insight-input">RGB-D scene</b></span>
+              <i data-lucide="arrow-right"></i>
+              <span><small>Processing</small><b id="insight-process">Pipeline</b></span>
+              <i data-lucide="arrow-right"></i>
+              <span><small>Output</small><b id="insight-output">Placed objects</b></span>
+            </div>
+            <div class="insight-metrics" id="insight-metrics"><span>Waiting</span></div>
+            <button class="icon-button compact insight-more" id="open-stage-details" type="button" aria-label="Open stage details" data-tooltip="Understand this stage" data-tooltip-detail="Purpose, input data, computations and decision criteria."><i data-lucide="book-open"></i></button>
+          </div>
+          <div class="replay-row">
+            <div class="replay-buttons">
+              <button class="icon-button compact" id="replay-previous" type="button" disabled aria-label="Previous event" data-tooltip="Previous"><i data-lucide="skip-back"></i></button>
+              <button class="icon-button compact replay-play" id="replay-play" type="button" disabled aria-label="Play replay" data-tooltip="Play"><i data-lucide="play"></i></button>
+              <button class="icon-button compact" id="replay-next" type="button" disabled aria-label="Next event" data-tooltip="Next"><i data-lucide="skip-forward"></i></button>
+            </div>
+            <div class="chapter-seek" id="chapter-seek">
+              <div class="chapter-segments" id="chapter-segments" aria-label="Run chapters"></div>
+              <div class="progress-line"><i id="progress-fill"></i></div>
+              <canvas class="event-ticks" id="event-ticks" aria-hidden="true"></canvas>
+              <i class="seek-cursor" id="seek-cursor" aria-hidden="true" hidden></i>
+              <div class="seek-tooltip" id="seek-tooltip" hidden>
+                <strong id="seek-tooltip-title">Stage</strong>
+                <span id="seek-tooltip-detail"></span>
+              </div>
+              <input id="replay-slider" type="range" min="0" max="100" value="0" disabled aria-label="Position in run">
+            </div>
+            <span class="replay-position" id="replay-position">— / —</span>
+            <select class="replay-speed" id="replay-speed" aria-label="Playback speed" disabled><option value="0.5">0.5×</option><option value="1" selected>1×</option><option value="2">2×</option><option value="4">4×</option></select>
+          </div>
+          <div class="event-ruler-row">
+            <div class="event-count">
+              <small>Events</small>
+              <strong id="event-position-detail">— / —</strong>
+              <span id="event-count">0 total</span>
+            </div>
+            <div class="event-ruler-scroll" id="event-ruler-scroll" aria-label="Detailed event ruler">
+              <div class="event-ruler-inner" id="event-ruler-inner">
+                <div class="event-ruler-cells" id="event-ruler-cells"></div>
+                <i class="event-ruler-cursor" id="event-ruler-cursor" aria-hidden="true" hidden></i>
+              </div>
+            </div>
+            <div class="ruler-zoom" role="group" aria-label="Detailed ruler zoom">
+              <button class="icon-button compact" id="ruler-zoom-out" type="button" disabled aria-label="Zoom out"><i data-lucide="minus"></i></button>
+              <button class="icon-button compact" id="ruler-zoom-fit" type="button" disabled aria-label="Show all stages"><i data-lucide="scan"></i></button>
+              <button class="icon-button compact" id="ruler-zoom-in" type="button" disabled aria-label="Zoom in"><i data-lucide="plus"></i></button>
+            </div>
+          </div>
+        </div>
+
+        <section class="stage-detail-drawer" id="stage-detail-drawer" aria-label="Stage details" hidden>
+          <header>
+            <div><span id="detail-kicker">Stage</span><strong id="detail-title">Pipeline</strong></div>
+            <button class="icon-button compact" id="close-stage-details" type="button" aria-label="Close details"><i data-lucide="x"></i></button>
+          </header>
+          <div class="stage-detail-grid">
+            <article><span>Purpose</span><p id="detail-purpose"></p></article>
+            <article><span>Input data</span><p id="detail-data"></p></article>
+            <article><span>Computation</span><p id="detail-compute"></p></article>
+            <article><span>Decision and output</span><p id="detail-decision"></p></article>
+          </div>
+          <div class="event-diagnostics" id="event-diagnostics"></div>
+        </section>
+
+        <section class="log-drawer" id="log-drawer" aria-label="Execution log">
+          <header><strong>Log</strong><span id="log-count">0 line</span><button class="icon-button compact" id="clear-logs" type="button" aria-label="Clear display"><i data-lucide="trash-2"></i></button></header>
+          <pre id="logs"></pre>
+        </section>
+      </section>
+
+      <aside class="inspector-panel ui-panel" id="inspector-panel">
+        <div class="panel-resizer inspector-resizer ui-resizer" id="inspector-resizer" role="separator" aria-label="Resize inspector" aria-orientation="vertical" tabindex="0" data-tooltip="Inspector width" data-tooltip-detail="Drag horizontally or use the left and right arrow keys."></div>
+        <nav class="tabs ui-tabs" aria-label="Inspector">
+          <button class="active" type="button" data-tab="parameters"><i data-lucide="sliders-horizontal"></i><span>Parameters</span></button>
+          <button type="button" data-tab="candidates"><i data-lucide="list-ordered"></i><span>Candidates</span><b id="candidate-count">0</b></button>
+          <button type="button" data-tab="history"><i data-lucide="history"></i><span>Runs</span></button>
+        </nav>
+
+        <div class="tab-panel active" data-panel="parameters">
+          <form id="parameters-form">
+            <fieldset>
+              <legend>Inputs</legend>
+              <div class="config-field scene-config-field">
+                <label for="scene-select">RGB-D scene</label>
+                <div class="config-control-row">
+                  <select id="scene-select" data-config="scene_zip" aria-describedby="scene-selected-path"></select>
+                  <button class="icon-button compact" id="add-scene" type="button" aria-label="Add an RGB-D scene" data-tooltip="Add scene" data-tooltip-detail="Save a name and RGB-D ZIP path in the local catalog."><i data-lucide="plus"></i></button>
+                </div>
+                <small id="scene-selected-path"></small>
+              </div>
+              <label class="switch-row" data-tooltip="Multi-scene execution" data-tooltip-detail="Create a separate run for each scene and execute them sequentially to limit CPU and memory use."><input id="multi-scene-enabled" type="checkbox"><span class="switch"></span><span>All available scenes</span></label>
+              <div id="multi-scene-list" class="multi-scene-list" hidden aria-label="Batch scenes"></div>
+              <small id="multi-scene-summary" class="multi-scene-summary" hidden></small>
+              <div class="config-field">
+                <label for="db-dir-input">ShapeNet database</label>
+                <div class="config-control-row">
+                  <input id="db-dir-input" data-config="db_dir" type="text">
+                  <button class="icon-button compact" type="button" data-pick-path data-target="db-dir-input" data-kind="folder" data-purpose="db_dir" aria-label="Browse for the ShapeNet database directory" data-tooltip="Browse"><i data-lucide="folder-open"></i></button>
+                </div>
+              </div>
+              <div class="config-field">
+                <label for="candidate-index-input">Candidate index</label>
+                <div class="config-control-row">
+                  <input id="candidate-index-input" data-config="candidate_index" type="text">
+                  <button class="icon-button compact" type="button" data-pick-path data-target="candidate-index-input" data-kind="file" data-purpose="candidate_index" aria-label="Browse for the candidate index file" data-tooltip="Browse"><i data-lucide="file-search"></i></button>
+                </div>
+              </div>
+              <div class="config-field">
+                <label for="run-root-input">Run directory</label>
+                <div class="config-control-row">
+                  <input id="run-root-input" data-config="run_root" type="text">
+                  <button class="icon-button compact" type="button" data-pick-path data-target="run-root-input" data-kind="folder" data-purpose="run_root" aria-label="Browse for the run directory" data-tooltip="Browse"><i data-lucide="folder-open"></i></button>
+                </div>
+              </div>
+              <div class="two-fields"><label>Prefix<input data-config="name_prefix" type="text"></label><label>Suffix<input data-config="name_suffix" type="text"></label></div>
+            </fieldset>
+            <fieldset>
+              <legend>Reconstruction</legend>
+              <div class="two-fields"><label>Voxel (m)<input data-config="voxel" type="number" min="0.005" max="0.1" step="0.005"></label><label>Volume<select data-config="volume_layout"><option>auto</option><option>dense</option><option>sparse</option></select></label></div>
+              <div class="two-fields"><label>Backend<select data-config="fusion_backend"><option>auto</option><option>cpu</option><option>cuda</option></select></label></div>
+              <div class="two-fields"><label>Maximum stride<input data-config="frame_stride" type="number" min="1" step="1"></label><label>Minimum frames<input data-config="min_frames" type="number" min="0" step="1"></label></div>
+              <label>Frames max<input data-config="max_frames" type="number" min="0" step="1"></label>
+              <div class="two-fields"><label>Jobs<input data-config="jobs" type="number" min="1" step="1"></label><label>Keypoints max<input data-config="max_scan_keypoints" type="number" min="0" step="50"></label></div>
+              <label class="switch-row"><input data-config="spatial_keypoints" type="checkbox"><span class="switch"></span><span>Spatial balancing</span></label>
+            </fieldset>
+            <details>
+              <summary>Advanced fusion</summary>
+              <fieldset>
+                <div class="two-fields"><label>Maximum depth (m)<input data-config="depth_trunc" type="number" min="0.5" max="10" step="0.1"></label><label>Isosurface sampling (m)<input data-config="iso_sampling" type="number" min="0.002" max="0.05" step="0.002"></label></div>
+                <label>Maximum surface points<input data-config="max_surface_points" type="number" min="10000" max="1000000" step="10000"></label>
+                <div class="two-fields"><label>Surface<select data-config="surface_field"><option>raw</option><option>smoothed</option></select></label><label>Minimum support<input data-config="surface_min_support" type="number" min="0" max="1" step="0.05"></label></div>
+                <div class="two-fields"><label>Extraction<select data-config="surface_extraction"><option>zero_crossing</option><option>hybrid</option><option>near_zero</option></select></label><label>Recovery band<input data-config="surface_band_factor" type="number" min="0.25" max="3" step="0.05"></label></div>
+                <div class="two-fields"><label>Recovery distance<input data-config="surface_rescue_distance_factor" type="number" min="0" max="3" step="0.05"></label><label>Minimum recovery weight<input data-config="surface_rescue_min_weight" type="number" min="0" max="64" step="1"></label></div>
+                <div class="two-fields"><label>Normal smoothing<input data-config="gradient_smoothing_sigma" type="number" min="0" max="2" step="0.1"></label><label>Silhouette threshold (m)<input data-config="depth_edge_threshold" type="number" min="0" max="0.2" step="0.01"></label></div>
+                <div class="two-fields"><label>Background weight<input data-config="depth_edge_background_weight" type="number" min="0" max="1" step="0.05"></label><label>Silhouette radius<input data-config="depth_edge_radius" type="number" min="0" max="4" step="1"></label></div>
+                <div class="two-fields"><label>Block resolution<input data-config="sparse_block_resolution" type="number" min="4" max="32" step="4"></label><label>Block capacity<input data-config="sparse_block_count" type="number" min="1000" max="200000" step="1000"></label></div>
+                <label>Visibility stride<input data-config="visibility_depth_stride" type="number" min="1" max="8" step="1"></label>
+              </fieldset>
+            </details>
+            <details>
+              <summary>Keypoint detection</summary>
+              <fieldset>
+                <small>These values can be saved from the Debug Visualizer.</small>
+                <div class="two-fields"><label>Neighborhood radius<input data-config="neighbor_radius" type="number" min="0.01" max="0.2" step="0.005"></label><label>Curvature threshold<input data-config="curvature_threshold" type="number" min="0" max="0.2" step="0.002"></label></div>
+                <div class="two-fields"><label>Harris k<input data-config="harris_k" type="number" min="0.005" max="0.12" step="0.002"></label><label>Harris threshold<input data-config="harris_threshold" type="number" min="-0.05" max="0.1" step="0.001"></label></div>
+                <div class="two-fields"><label>Harris reference<input data-config="harris_reference_neighbors" type="number" min="3" max="30" step="1"></label><label>2D hull ratio<input data-config="convex_hull_ratio" type="number" min="0.1" max="3.2" step="0.05"></label></div>
+                <div class="two-fields"><label>2D support range<input data-config="corner_plane_radius_factor" type="number" min="1" max="8" step="0.25"></label><label>2D support area<input data-config="corner_plane_min_area" type="number" min="0" max="0.15" step="0.005"></label></div>
+                <div class="two-fields"><label>Normal consistency<input data-config="corner_plane_normal_cos" type="number" min="0.5" max="1" step="0.01"></label><label>NMS radius<input data-config="nms_radius" type="number" min="0.005" max="0.3" step="0.005"></label></div>
+                <div class="two-fields"><label>Adjustment iterations<input data-config="adjust_iterations" type="number" min="0" max="12" step="1"></label><label>Maximum displacement<input data-config="jitter_reject" type="number" min="0" max="0.3" step="0.005" placeholder="auto"></label></div>
+                <div class="two-fields"><label>Deduplication radius<input data-config="dedup_radius" type="number" min="0.001" max="0.15" step="0.002"></label><label>Ground margin<input data-config="floor_height" type="number" min="0" max="0.5" step="0.01"></label></div>
+                <div class="two-fields"><label>Spatial cell<input data-config="spatial_keypoint_cell" type="number" min="0.05" max="2" step="0.05"></label><label>Reserved 2D budget<input data-config="min_2d_corner_fraction" type="number" min="0" max="1" step="0.05"></label></div>
+                <details>
+                  <summary>Filter large vertical planes</summary>
+                  <fieldset>
+                    <label class="switch-row"><input data-config="wall_filter_enabled" type="checkbox"><span class="switch"></span><span>Apply the wall filter to the scan</span></label>
+                    <label class="switch-row"><input data-config="wall_hard_reject" type="checkbox"><span class="switch"></span><span>Reject unambiguous wall points</span></label>
+                    <div class="two-fields"><label>Verticality<input data-config="wall_vertical_normal_cos" type="number" min="0.05" max="0.7" step="0.01"></label><label>Normal consistency<input data-config="wall_plane_normal_cos" type="number" min="0.7" max="0.999" step="0.005"></label></div>
+                    <div class="two-fields"><label>Orientation step (°)<input data-config="wall_plane_angle_degrees" type="number" min="2" max="30" step="1"></label><label>Plane tolerance (m)<input data-config="wall_plane_distance" type="number" min="0.01" max="0.2" step="0.005"></label></div>
+                    <div class="two-fields"><label>Minimum support<input data-config="wall_plane_min_points" type="number" min="20" max="5000" step="20"></label><label>Maximum planes<input data-config="wall_plane_max_count" type="number" min="1" max="16" step="1"></label></div>
+                    <div class="two-fields"><label>Minimum width (m)<input data-config="wall_plane_min_width" type="number" min="0.2" max="4" step="0.1"></label><label>Minimum height (m)<input data-config="wall_plane_min_height" type="number" min="0.2" max="4" step="0.1"></label></div>
+                    <div class="two-fields"><label>Minimum area (m²)<input data-config="wall_plane_min_area" type="number" min="0.1" max="12" step="0.1"></label><label>Voting points<input data-config="wall_plane_sample_points" type="number" min="1000" max="100000" step="1000"></label></div>
+                    <div class="two-fields"><label>Local support (m)<input data-config="wall_small_radius" type="number" min="0.02" max="0.3" step="0.01"></label><label>Wider support (m)<input data-config="wall_large_radius" type="number" min="0.05" max="0.6" step="0.01"></label></div>
+                    <div class="two-fields"><label>Object radius (m)<input data-config="wall_protrusion_radius" type="number" min="0.05" max="0.8" step="0.01"></label><label>Object separation (m)<input data-config="wall_protrusion_distance" type="number" min="0.02" max="0.3" step="0.01"></label></div>
+                    <div class="two-fields"><label>Object protection<input data-config="wall_object_protection" type="number" min="0" max="1" step="0.05"></label><label>Penalty weight<input data-config="wall_penalty_weight" type="number" min="0" max="0.3" step="0.01"></label></div>
+                    <div class="two-fields"><label>Rejection threshold<input data-config="wall_reject_threshold" type="number" min="0" max="1" step="0.05"></label><label>Maximum object evidence<input data-config="wall_reject_max_object_score" type="number" min="0" max="1" step="0.05"></label></div>
+                    <label class="switch-row"><input data-config="wall_budget_enabled" type="checkbox"><span class="switch"></span><span>Limit the share of the budget occupied by walls</span></label>
+                    <div class="two-fields"><label>Quota affinity<input data-config="wall_budget_affinity_threshold" type="number" min="0" max="1" step="0.01"></label><label>Quota proximity<input data-config="wall_budget_proximity_threshold" type="number" min="0" max="1" step="0.01"></label></div>
+                    <div class="two-fields"><label>Maximum wall fraction<input data-config="wall_budget_max_fraction" type="number" min="0" max="1" step="0.01"></label><span></span></div>
+                    <div class="two-fields"><label>Wall cell (m)<input data-config="wall_budget_cell_size" type="number" min="0.05" max="2" step="0.05"></label><label>Points per cell<input data-config="wall_budget_max_per_cell" type="number" min="1" max="20" step="1"></label></div>
+                    <label>Feature minimum<input data-config="wall_budget_min_features" type="number" min="0" max="600" step="5"></label>
+                  </fieldset>
+                </details>
+                <details>
+                  <summary>Quality and stability</summary>
+                  <fieldset>
+                    <label class="switch-row"><input data-config="planar_filter_enabled" type="checkbox"><span class="switch"></span><span>Remove planar surface interiors</span></label>
+                    <div class="two-fields"><label>Planar radius<input data-config="planar_filter_radius" type="number" min="0.03" max="0.5" step="0.01"></label><label>Maximum residual<input data-config="planar_filter_max_residual" type="number" min="0.001" max="0.08" step="0.001"></label></div>
+                    <div class="two-fields"><label>Normal consistency<input data-config="planar_filter_normal_cos" type="number" min="0.5" max="1" step="0.01"></label><label>Angular coverage<input data-config="planar_filter_angular_coverage" type="number" min="0" max="1" step="0.05"></label></div>
+                    <label>Minimum planar neighbors<input data-config="planar_filter_min_neighbors" type="number" min="6" max="500" step="1"></label>
+                    <label class="switch-row"><input data-config="hole_boundary_filter_enabled" type="checkbox"><span class="switch"></span><span>Remove unconfirmed RGB-D hole boundaries</span></label>
+                    <div class="two-fields"><label>Probe radius<input data-config="hole_boundary_probe_radius" type="number" min="0" max="0.2" step="0.005"></label><label>Maximum fraction<input data-config="hole_boundary_max_fraction" type="number" min="0" max="1" step="0.05"></label></div>
+                    <label class="switch-row"><input data-config="repeatability_filter_enabled" type="checkbox"><span class="switch"></span><span>Require a multi-scale Harris response</span></label>
+                    <div class="two-fields"><label>Radius factor<input data-config="repeatability_radius_factor" type="number" min="1" max="4" step="0.1"></label><label>Response ratio<input data-config="repeatability_response_ratio" type="number" min="0" max="2" step="0.05"></label></div>
+                    <div class="two-fields"><label>Relative Harris score<input data-config="quality_response_ratio" type="number" min="0" max="1" step="0.05"></label><label>Local score radius<input data-config="quality_score_radius" type="number" min="0.05" max="2" step="0.05"></label></div>
+                    <label>Geometric NMS<input data-config="geometric_nms_radius" type="number" min="0" max="0.5" step="0.01"></label>
+                    <label>Recall minimum<input data-config="quality_filter_min_features" type="number" min="0" max="600" step="5"></label>
+                    <label class="switch-row"><input data-config="descriptor_keypoint_filter_enabled" type="checkbox"><span class="switch"></span><span>Filter by intrinsic descriptor quality</span></label>
+                    <div class="two-fields"><label>Minimum occupied cells<input data-config="descriptor_min_occupied" type="number" min="1" max="200" step="1"></label><label>Maximum hole fraction<input data-config="descriptor_max_hole_fraction" type="number" min="0" max="1" step="0.05"></label></div>
+                    <div class="two-fields"><label>Quality NMS<input data-config="quality_nms_radius" type="number" min="0" max="0.5" step="0.01"></label><label>Minimum relative score<input data-config="quality_min_score_ratio" type="number" min="0" max="1" step="0.05"></label></div>
+                    <label>Post-descriptor minimum<input data-config="descriptor_keypoint_min_features" type="number" min="0" max="600" step="5"></label>
+                  </fieldset>
+                </details>
+              </fieldset>
+            </details>
+            <fieldset>
+              <legend>Retrieval</legend>
+              <div class="two-fields"><label>Global Top-k<input data-config="candidate_top_k" type="number" min="1" step="10"></label><label>Pool<input data-config="candidate_pool_k" type="number" min="0" step="50"></label></div>
+              <label>Top-k per group<input data-config="candidate_top_per_group" type="number" min="0" step="10" title="Models retained independently for each object group. Set 0 to restore the legacy global ranking."></label>
+              <label>Additional local candidates<input data-config="candidate_local_extra_k" type="number" min="0" max="500" step="8" title="Supplement shared across groups using the local database index. The original pool is preserved. Set 0 to disable."></label>
+              <label>Reranking descriptor threshold<input data-config="candidate_descriptor_distance_threshold" type="number" min="0" step="1" title="Threshold applied before full matching. Set 0 to reuse the RANSAC threshold."></label>
+              <div class="two-fields"><label class="switch-row"><input data-config="group_pose_seed_enabled" type="checkbox"><span class="switch"></span><span>Group pose seeds</span></label><label>Tested poses<input data-config="group_pose_seed_count" type="number" min="1" max="36" step="1"></label></div>
+              <div class="two-fields"><label>Descriptor threshold<input data-config="descriptor_distance_threshold" type="number" min="0" step="1"></label><label>Descriptor ratio<input data-config="descriptor_ratio_threshold" type="number" min="0" max="1" step="0.005"></label></div>
+              <div class="two-fields"><label>Coverage<input data-config="coverage" type="number" min="0" max="1" step="0.01"></label><label>Diversity<input data-config="candidate_diversity" type="number" min="0" max="1" step="0.05"></label></div>
+              <label class="switch-row"><input data-config="candidate_diverse" type="checkbox"><span class="switch"></span><span>Diverse pool</span></label>
+              <label class="switch-row"><input data-config="paper_verification" type="checkbox"><span class="switch"></span><span>Paper verification</span></label>
+            </fieldset>
+            <details>
+              <summary>Progressive querying and selection</summary>
+              <fieldset>
+                <label>Query mode<select data-config="query_mode"><option value="single">Single final query</option><option value="progressive">Temporal prefixes (paper legacy)</option></select></label>
+                <div class="two-fields progressive-query-fields"><label>First query frame<input data-config="query_start_frames" type="number" min="1"></label><label>Interval<input data-config="query_interval_frames" type="number" min="1"></label></div>
+                <div class="two-fields"><label>Resume batch<input data-config="resume_batch_size" type="number" min="1"></label><label>Minimum symmetric score<input data-config="final_min_symmetric_score" type="number" min="0" max="1" step="0.01"></label></div>
+                <div class="two-fields"><label>Global overlap<input data-config="final_global_overlap" type="number" min="0" max="1" step="0.01"></label><label>Reverse final<input data-config="final_reverse_gate" type="number" min="0" max="1" step="0.01"></label></div>
+                <label>Category limits<input data-config="final_max_per_category" type="text" placeholder="chair=2 table=2 couch=1"></label>
+              </fieldset>
+            </details>
+          </form>
+        </div>
+
+        <div class="tab-panel candidate-panel" data-panel="candidates">
+          <div class="candidate-toolbar"><strong id="candidate-heading">Tested candidates</strong><select id="candidate-filter" aria-label="Filter candidates"><option value="all">All</option><option value="candidate">Accepted</option><option value="rejected">Rejected</option></select></div>
+          <div class="candidate-list" id="candidate-list"><div class="empty-list">No candidates tested</div></div>
+          <div class="candidate-detail" id="candidate-detail"><span>Selection</span><strong>No candidates</strong><p>Scores and decisions will appear here.</p></div>
+        </div>
+
+        <div class="tab-panel" data-panel="history">
+          <div class="history-head"><strong>Recent runs</strong><button class="icon-button compact" id="refresh-history" type="button" aria-label="Refresh"><i data-lucide="refresh-cw"></i></button></div>
+          <div class="history-list" id="history-list"></div>
+        </div>
+      </aside>
+    </main>
+
+    <div class="app-tooltip ui-tooltip" id="app-tooltip" role="tooltip" hidden><strong></strong><span></span></div>
+    <div class="toast ui-toast" id="toast" role="status" hidden></div>
+    <div class="dialog-backdrop" id="rename-dialog" hidden>
+      <form class="dialog ui-dialog" id="rename-form" role="dialog" aria-modal="true" aria-labelledby="rename-title">
+        <div class="dialog-head"><div><span class="eyebrow">Organization</span><h2 id="rename-title">Rename run</h2></div><button class="icon-button compact" id="close-rename" type="button" aria-label="Close"><i data-lucide="x"></i></button></div>
+        <p>Change the display name. The technical identifier is preserved for caches and artifacts.</p>
+        <label>Display name<input id="rename-input" type="text" maxlength="80" required autocomplete="off"></label>
+        <div class="dialog-actions"><button class="button subtle" id="cancel-rename" type="button">Cancel</button><button class="button primary" type="submit"><i data-lucide="check"></i><span>Save</span></button></div>
+      </form>
+    </div>
+    <div class="dialog-backdrop" id="add-scene-dialog" hidden>
+      <form class="dialog ui-dialog" id="add-scene-form" role="dialog" aria-modal="true" aria-labelledby="add-scene-title">
+        <div class="dialog-head"><div><span class="eyebrow">RGB-D catalog</span><h2 id="add-scene-title">Add scene</h2></div><button class="icon-button compact" id="close-add-scene" type="button" aria-label="Close"><i data-lucide="x"></i></button></div>
+        <p>This entry remains available in the list. The original ZIP is neither moved nor copied.</p>
+        <label>Display name<input id="scene-label-input" type="text" maxlength="80" required autocomplete="off" placeholder="e.g. IKEA Table"></label>
+        <div class="config-field dialog-path-field">
+          <label for="scene-path-input">ZIP file path</label>
+          <div class="config-control-row">
+            <input id="scene-path-input" type="text" required autocomplete="off" placeholder="C:\data\scene.zip">
+            <button class="icon-button compact" type="button" data-pick-path data-target="scene-path-input" data-kind="file" data-purpose="scene_zip" aria-label="Browse RGB-D ZIP files" data-tooltip="Browse"><i data-lucide="file-archive"></i></button>
+          </div>
+        </div>
+        <div class="dialog-actions"><button class="button subtle" id="cancel-add-scene" type="button">Cancel</button><button class="button primary" type="submit"><i data-lucide="plus"></i><span>Add</span></button></div>
+      </form>
+    </div>
+    <div class="dialog-backdrop" id="path-browser-dialog" hidden>
+      <section class="dialog ui-dialog path-browser-dialog" role="dialog" aria-modal="true" aria-labelledby="path-browser-title">
+        <div class="dialog-head">
+          <div><span class="eyebrow">Accessible files</span><h2 id="path-browser-title">Select a path</h2></div>
+          <button class="icon-button compact" id="close-path-browser" type="button" aria-label="Close"><i data-lucide="x"></i></button>
+        </div>
+        <p>Only files and directories visible to the server are listed.</p>
+        <form class="path-browser-address" id="path-browser-address-form">
+          <button class="icon-button compact" id="path-browser-up" type="button" aria-label="Parent directory"><i data-lucide="arrow-up"></i></button>
+          <input id="path-browser-address" type="text" aria-label="Current path" autocomplete="off">
+          <button class="button subtle" type="submit"><i data-lucide="corner-down-left"></i><span>Open</span></button>
+        </form>
+        <div class="path-browser-roots" id="path-browser-roots" aria-label="Allowed roots"></div>
+        <div class="path-browser-list" id="path-browser-list" role="listbox" aria-label="Directory contents"></div>
+        <div class="dialog-actions">
+          <button class="button subtle" id="cancel-path-browser" type="button">Cancel</button>
+          <button class="button primary" id="select-path-browser" type="button"><i data-lucide="check"></i><span>Select this directory</span></button>
+        </div>
+      </section>
+    </div>
+  </div>
+  <script type="module" src="/run_console.js"></script>
+</body>
+</html>

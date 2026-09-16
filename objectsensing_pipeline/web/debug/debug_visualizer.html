@@ -1,0 +1,292 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>ObjectSensing Debug Visualizer</title>
+  <link rel="stylesheet" href="/debug_visualizer.css">
+  <link rel="stylesheet" href="/ui_shared.css">
+  <script src="/vendor/lucide/lucide.min.js"></script>
+  <script type="importmap">{"imports":{"three":"/vendor/three/three.module.js","three/addons/":"/vendor/three/addons/"}}</script>
+</head>
+<body>
+  <div class="debug-app" id="debug-app">
+    <header class="topbar ui-topbar">
+      <div class="brand">
+        <a class="icon-button" href="/" aria-label="Back to Run Console" data-tooltip="Run Console"><i data-lucide="arrow-left"></i></a>
+        <span class="brand-mark" aria-hidden="true"><i></i><i></i><i></i><i></i></span>
+        <div><strong>Debug Visualizer</strong><span id="run-id">Keypoints · no computation</span></div>
+      </div>
+      <div class="run-state">
+        <span class="status-dot idle" id="status-dot"></span>
+        <div><strong id="status-label">Ready</strong><span id="status-detail">3 scenes configured</span></div>
+      </div>
+      <div class="top-actions">
+        <button class="icon-button" id="toggle-left" type="button" aria-label="Show controls" data-tooltip="Controls"><i data-lucide="panel-left"></i></button>
+        <button class="button subtle" id="stop-debug" type="button" disabled><i data-lucide="square"></i><span>Stop</span></button>
+        <button class="button primary" id="run-debug" type="button"><i data-lucide="play"></i><span>Compare</span></button>
+        <button class="icon-button" id="toggle-right" type="button" aria-label="Show inspector" data-tooltip="Inspector"><i data-lucide="panel-right"></i></button>
+      </div>
+    </header>
+
+    <main class="workspace">
+      <aside class="control-panel ui-panel" id="control-panel">
+        <section class="panel-section scene-source-section">
+          <header><span>Test scenes</span><strong id="source-count">0 scenes</strong></header>
+          <div class="source-list" id="source-list"></div>
+        </section>
+        <section class="panel-section chain-section downstream-only">
+          <header><span>Upstream input</span><strong id="chain-direction">Fusion → Keypoints</strong></header>
+          <label for="upstream-fusion-run" id="upstream-stage-label">Run Fusion</label>
+          <select id="upstream-fusion-run" aria-label="Fusion run used as keypoint input"></select>
+          <button class="button subtle block" id="chain-fusion-run" type="button" data-tooltip="Use this Fusion run" data-tooltip-detail="Replace keypoint geometry with the complete artifacts from this Fusion run. Computation starts only when you click Compare.">
+            <i data-lucide="git-merge"></i><span id="chain-upstream-label">Use this Fusion run</span>
+          </button>
+          <small id="chain-status">No Fusion run selected.</small>
+        </section>
+        <section class="panel-section chain-current-section">
+          <header><span>Pipeline execution</span><strong id="chain-next-stage">Keypoints</strong></header>
+          <label for="chain-target-stage">Run through</label>
+          <select id="chain-target-stage" aria-label="Last stage to execute"></select>
+          <p id="chain-next-copy">Each stage consumes the exact artifact produced by the previous stage.</p>
+          <button class="button primary block" id="chain-start" type="button" data-tooltip="Start a new chain" data-tooltip-detail="Run the displayed stage for the checked scenes, then continue through the selected destination. Fusion requires no previous result.">
+            <i data-lucide="play"></i><span id="chain-start-label">Start</span>
+          </button>
+          <button class="button block" id="chain-current-fusion" type="button" disabled data-tooltip="Continue from loaded result" data-tooltip-detail="Reuse the displayed result and run subsequent stages for the checked scenes.">
+            <i data-lucide="play"></i><span id="chain-current-label">Run through Keypoints</span>
+          </button>
+          <small id="chain-current-status">Load or run Fusion to produce geometry.</small>
+        </section>
+        <section class="panel-section live-section">
+          <header><span>Workflow loop</span><strong>Comparison</strong></header>
+          <label class="switch-row"><input id="auto-run" type="checkbox"><span class="switch"></span><span><b>Automatic computation</b><small>After changing a parameter</small></span></label>
+          <label class="switch-row"><input id="code-watch" type="checkbox"><span class="switch"></span><span><b>Watch source code</b><small>Rerun after saving Python code</small></span></label>
+          <label class="switch-row"><input id="sync-cameras" type="checkbox" checked><span class="switch"></span><span><b>Linked cameras</b><small>Same viewpoint across scenes</small></span></label>
+          <label class="switch-row keypoint-only"><input id="show-rejected" type="checkbox" checked><span class="switch"></span><span><b>Show rejected points</b><small>Red points with rejection reasons</small></span></label>
+          <label class="switch-row keypoint-only"><input id="curvature-heatmap" type="checkbox"><span class="switch"></span><span><b>Curvature map</b><small>Color the entire surface</small></span></label>
+          <label class="switch-row keypoint-only"><input id="show-baseline" type="checkbox" checked><span class="switch"></span><span><b>Baseline</b><small>Removed and added points</small></span></label>
+        </section>
+        <div class="panel-footer">
+          <button class="button subtle block" id="pin-baseline" type="button" disabled><i data-lucide="pin"></i><span>Pin as baseline</span></button>
+        </div>
+        <div class="panel-resizer left-panel-resizer ui-resizer" id="left-panel-resizer" role="separator" aria-label="Resize controls panel" aria-orientation="vertical" tabindex="0" data-tooltip="Controls width" data-tooltip-detail="Drag horizontally, use arrow keys, or double-click to reset."></div>
+      </aside>
+
+      <section class="visual-workspace" aria-label="Multi-scene 3D comparison">
+        <div class="visual-toolbar ui-panel">
+          <button class="step-heading" id="open-step-help" type="button" data-tooltip="Stage details" data-tooltip-detail="Show the role, decision and relevance of this substep."><span id="step-index">1 / 9</span><strong id="step-title">Surface</strong><small id="step-description">Fused point cloud with local curvature.</small><i data-lucide="circle-help"></i></button>
+          <div class="visual-actions">
+            <div class="legend" aria-label="Point types: legend and visibility">
+              <b class="legend-title">Layers</b>
+              <label class="legend-toggle" data-tooltip="Fused surface" data-tooltip-detail="Reference RGB-D cloud. Hide it to isolate keypoints.">
+                <input id="layer-surface" data-layer-role="surface" type="checkbox" checked aria-label="Show surface"><i class="surface"></i><span>Surface</span>
+              </label>
+              <label class="legend-toggle fusion-only" data-tooltip="RGB-D measurements" data-tooltip-detail="Depth points projected into world coordinates and colored from each RGB frame.">
+                <input id="layer-fusion" data-layer-role="fusion" type="checkbox" checked aria-label="Show RGB-D measurements"><i class="fusion"></i><span>RGB-D</span>
+              </label>
+              <label class="legend-toggle fusion-descriptor-only" data-tooltip="Unknown space" data-tooltip-detail="Voxels never crossed or reached by a depth ray. Descriptors keep these separate from observed free space.">
+                <input id="layer-unknown" data-layer-role="unknown" type="checkbox" aria-label="Show unknown voxels"><i class="unknown"></i><span>Unknown</span>
+              </label>
+              <label class="legend-toggle fusion-descriptor-only" data-tooltip="Observed free space" data-tooltip-detail="Voxels crossed by RGB-D rays before the measured depth, sampled in the local descriptor grid.">
+                <input id="layer-free" data-layer-role="free" type="checkbox" checked aria-label="Show free voxels"><i class="free"></i><span>Free</span>
+              </label>
+              <label class="legend-toggle fusion-descriptor-only" data-tooltip="Observed surface" data-tooltip-detail="Voxels near measured depth. Seed-fill keeps only the component connected to the supporting keypoint.">
+                <input id="layer-occupied" data-layer-role="occupied" type="checkbox" checked aria-label="Show occupied voxels"><i class="occupied"></i><span>Occupied</span>
+              </label>
+              <label class="legend-toggle fusion-only" data-tooltip="SDF normals" data-tooltip-detail="Signed distance field gradients sampled on the reconstructed surface.">
+                <input id="layer-normal" data-layer-role="normal" type="checkbox" checked aria-label="Show SDF normals"><i class="normal"></i><span>Normals</span>
+              </label>
+              <label class="legend-toggle feature-only" data-tooltip="Candidate points" data-tooltip-detail="Points being evaluated at the displayed stage.">
+                <input id="layer-candidate" data-layer-role="candidate" type="checkbox" checked aria-label="Show candidates"><i class="candidate"></i><span>Candidates</span>
+              </label>
+              <label class="legend-toggle keypoint-only" data-tooltip="Dominant vertical planes" data-tooltip-detail="Detected wall supports and geometrically compatible keypoints. This diagnostic layer does not itself imply rejection.">
+                <input id="layer-wall" data-layer-role="wall" type="checkbox" checked aria-label="Show vertical planes"><i class="wall"></i><span>Walls</span>
+              </label>
+              <label class="legend-toggle feature-only" data-tooltip="Accepted points" data-tooltip-detail="Points that passed the test at this stage.">
+                <input id="layer-accepted" data-layer-role="accepted" type="checkbox" checked aria-label="Show accepted points"><i class="accepted"></i><span>Accepted</span>
+              </label>
+              <label class="legend-toggle feature-only" data-tooltip="Retained points" data-tooltip-detail="Subset passed to the next pipeline decision.">
+                <input id="layer-retained" data-layer-role="retained" type="checkbox" checked aria-label="Show points passed to matching"><i class="retained"></i><span>Matching</span>
+              </label>
+              <label class="legend-toggle feature-only" data-tooltip="Rejected points" data-tooltip-detail="Points removed by the current criterion. Select a point to inspect its exact rejection reason.">
+                <input id="layer-rejected" data-layer-role="rejected" type="checkbox" checked aria-label="Show rejected points"><i class="rejected"></i><span>Rejected</span>
+              </label>
+              <label class="legend-toggle keypoint-only" data-tooltip="Difference from baseline" data-tooltip-detail="Points present in the pinned baseline but absent from the current result.">
+                <input id="layer-baseline" data-layer-role="baseline" type="checkbox" checked aria-label="Show difference from baseline"><i class="baseline"></i><span>Baseline</span>
+              </label>
+              <label class="legend-toggle" data-tooltip="Adjustment vectors" data-tooltip-detail="Displacement from the initial keypoint position to its adjusted position.">
+                <input id="layer-vector" data-layer-role="vector" type="checkbox" checked aria-label="Show adjustment vectors"><i class="vector"></i><span>Adjustments</span>
+              </label>
+            </div>
+            <button class="icon-button compact debug-log-toggle" id="toggle-debug-logs" type="button" aria-label="Show execution log" aria-pressed="false" data-tooltip="Execution log" data-tooltip-detail="Stream worker output and save the log with the run.">
+              <i data-lucide="terminal"></i><b id="debug-log-badge" hidden>0</b>
+            </button>
+            <button class="icon-button compact" id="reset-cameras" type="button" aria-label="Reset cameras" data-tooltip="Reset camera"><i data-lucide="focus"></i></button>
+          </div>
+        </div>
+        <div class="scene-grid" id="scene-grid"></div>
+
+        <section class="debug-log-drawer ui-panel" id="debug-log-drawer" aria-label="Execution log" aria-hidden="true">
+          <header>
+            <div><strong>Execution log</strong><span id="debug-log-count">0 line</span></div>
+            <button class="icon-button compact" id="clear-debug-logs" type="button" aria-label="Clear log display" data-tooltip="Clear display" data-tooltip-detail="Hide received lines without deleting the run debug.log file."><i data-lucide="trash-2"></i></button>
+          </header>
+          <pre id="debug-logs" aria-live="polite"></pre>
+        </section>
+
+        <section class="debug-timeline ui-panel" aria-label="Stage substeps">
+          <div class="timeline-resizer ui-resizer" id="debug-timeline-resizer" role="separator" aria-label="Resize timeline" aria-orientation="horizontal" tabindex="0" data-tooltip="Timeline height" data-tooltip-detail="Drag vertically, use arrow keys, or double-click to reset."></div>
+          <nav class="debug-stage-track" id="debug-stage-track" aria-label="Pipeline stages"></nav>
+          <div class="timeline-summary">
+            <div><span>Input</span><strong id="timeline-input">—</strong></div>
+            <i data-lucide="arrow-right"></i>
+            <div><span>Retained</span><strong id="timeline-kept">—</strong></div>
+            <i data-lucide="arrow-right"></i>
+            <div><span>Rejected</span><strong id="timeline-rejected">—</strong></div>
+            <p id="timeline-explanation">Load or start a computation to inspect each decision.</p>
+          </div>
+          <div class="chapter-track" id="chapter-track"></div>
+          <div class="timeline-nav">
+            <button class="icon-button compact" id="previous-step" type="button" aria-label="Previous stage"><i data-lucide="chevron-left"></i></button>
+            <span><kbd>←</kbd><kbd>→</kbd> · <kbd>Shift</kbd> +10 · <kbd>Home</kbd>/<kbd>End</kbd></span>
+            <button class="icon-button compact" id="next-step" type="button" aria-label="Next stage"><i data-lucide="chevron-right"></i></button>
+          </div>
+        </section>
+      </section>
+
+      <aside class="inspector-panel ui-panel" id="inspector-panel">
+        <div class="panel-resizer right-panel-resizer ui-resizer" id="right-panel-resizer" role="separator" aria-label="Resize inspector" aria-orientation="vertical" tabindex="0" data-tooltip="Inspector width" data-tooltip-detail="Drag horizontally, use arrow keys, or double-click to reset."></div>
+        <nav class="inspector-tabs ui-tabs" aria-label="Inspector">
+          <button class="active" type="button" data-tab="parameters"><i data-lucide="sliders-horizontal"></i><span>Parameters</span></button>
+          <button type="button" data-tab="point"><i data-lucide="mouse-pointer-2"></i><span>Point</span></button>
+          <button type="button" data-tab="history"><i data-lucide="history"></i><span>Runs</span></button>
+        </nav>
+        <div class="inspector-content active" data-panel="parameters">
+          <div class="parameter-intro">
+            <strong id="parameter-stage-title">Keypoint detector</strong>
+            <span id="parameter-stage-copy">Values remain separate from Run Console settings until you explicitly apply them.</span>
+            <button class="button subtle block reset-stage-parameters" id="reset-stage-parameters" type="button" data-tooltip="Reset this stage" data-tooltip-detail="Restore current configuration defaults without an additional Debug preset.">
+              <i data-lucide="rotate-ccw"></i><span>Reference defaults</span>
+            </button>
+            <button class="button primary block apply-execution-parameters" id="apply-execution-parameters" type="button" data-tooltip="Apply to Run Console" data-tooltip-detail="Save compatible settings as defaults for future runs. Debug display options remain local.">
+              <i data-lucide="save"></i><span>Apply to Run Console</span>
+            </button>
+            <small class="parameter-sync-status" id="parameter-sync-status">No automatic synchronization.</small>
+          </div>
+          <form id="parameter-form"></form>
+        </div>
+        <div class="inspector-content" data-panel="point">
+          <div class="point-empty" id="point-empty"><i data-lucide="mouse-pointer-click"></i><strong>Select a point</strong><span>Click a keypoint in any scene.</span></div>
+          <div class="point-detail" id="point-detail" hidden>
+            <header><span id="point-scene">Scene</span><strong id="point-layer">Layer</strong></header>
+            <dl>
+              <div><dt>Source index</dt><dd id="point-index">—</dd></div>
+              <div><dt>Curvature</dt><dd id="point-curvature">—</dd></div>
+              <div><dt>Harris</dt><dd id="point-response">—</dd></div>
+              <div><dt>Selection score</dt><dd id="point-selection-score">—</dd></div>
+              <div><dt>Height</dt><dd id="point-height">—</dd></div>
+              <div><dt>Wall affinity</dt><dd id="point-wall-affinity">—</dd></div>
+              <div><dt>Wall score</dt><dd id="point-wall-score">—</dd></div>
+              <div><dt>Object evidence</dt><dd id="point-object-score">—</dd></div>
+              <div><dt>Support in front of wall</dt><dd id="point-object-anchor">—</dd></div>
+              <div><dt>Local / wider support</dt><dd id="point-wall-support">—</dd></div>
+              <div><dt>Protrusion / rupture</dt><dd id="point-wall-object-detail">—</dd></div>
+              <div><dt>Wall plane</dt><dd id="point-wall-plane">—</dd></div>
+              <div class="descriptor-only"><dt>Occupied / unknown cells</dt><dd id="point-descriptor-occupancy">—</dd></div>
+              <div class="descriptor-only"><dt>Best / second distance</dt><dd id="point-descriptor-distance">—</dd></div>
+              <div class="descriptor-only"><dt>Margin / entropy</dt><dd id="point-descriptor-ambiguity">—</dd></div>
+              <div class="descriptor-only"><dt>Compatible models</dt><dd id="point-descriptor-model-count">—</dd></div>
+              <div class="descriptor-only"><dt>Best model</dt><dd id="point-descriptor-model">—</dd></div>
+              <div class="reason-row"><dt>Decision</dt><dd id="point-reason">—</dd></div>
+            </dl>
+          </div>
+          <section class="distribution-section">
+            <header><strong>Distribution</strong><select id="histogram-kind" aria-label="Displayed distribution"></select></header>
+            <svg id="histogram" viewBox="0 0 320 150" role="img" aria-label="Histogram of the selected parameter"></svg>
+          </section>
+          <section class="comparison-section">
+            <header><strong>Difference from baseline</strong><span id="baseline-label">No baseline</span></header>
+            <div class="comparison-metrics" id="comparison-metrics"></div>
+          </section>
+          <section class="query-results query-only stage-specific-hidden">
+            <header><strong>Model ranking</strong><span id="query-candidate-count">0 candidates</span></header>
+            <div class="candidate-filters query-candidate-filters">
+              <label class="candidate-search"><i data-lucide="search"></i><input id="query-candidate-search" type="search" autocomplete="off" placeholder="Search by model or rank" aria-label="Search candidates"></label>
+              <select id="query-candidate-group" aria-label="Filter by keypoint group" data-tooltip="Displayed object query" data-tooltip-detail="Each keypoint group produces its own ranking. The merged ranking combines group ranks without mixing descriptors."><option value="all">Merged ranking</option></select>
+              <select id="query-candidate-category" aria-label="Filter by category"><option value="all">All categories</option></select>
+              <select id="query-candidate-status" aria-label="Filter by status"><option value="all">All statuses</option><option value="selected">Displayed</option><option value="retained">Final retained models</option><option value="accepted">Admissible hypotheses</option><option value="rejected">Rejected</option><option value="placed">Pose available</option><option value="loaded">Computed without pose</option><option value="loading">Computing</option><option value="pending">Not computed</option></select>
+              <button class="icon-button compact" id="reset-query-candidate-filters" type="button" aria-label="Reset filters" data-tooltip="Reset filters" data-tooltip-detail="Restore the full list without changing the 3D selection."><i data-lucide="list-filter"></i></button>
+            </div>
+            <div class="query-selection-toolbar">
+              <button type="button" id="query-show-all" data-tooltip="Show all" data-tooltip-detail="Select the visible list and compute missing poses sequentially to limit server load."><i data-lucide="eye"></i><span>Show all</span></button>
+              <button type="button" id="query-hide-all" data-tooltip="Hide all" data-tooltip-detail="Remove all candidates from the scene while preserving cached computations."><i data-lucide="eye-off"></i><span>Hide all</span></button>
+              <small id="query-selection-progress">Click · Ctrl · Shift · long press</small>
+            </div>
+            <div class="query-candidate-list" id="query-candidate-list"></div>
+            <p class="query-candidate-detail-empty" id="query-candidate-detail-empty">Select a candidate to compute correspondences and a provisional pose.</p>
+            <div class="query-candidate-detail" id="query-candidate-detail" hidden></div>
+          </section>
+        </div>
+        <div class="inspector-content" data-panel="history">
+          <div class="history-toolbar"><strong>Recent computations</strong><button class="icon-button compact" id="refresh-history" type="button" aria-label="Refresh"><i data-lucide="refresh-cw"></i></button></div>
+          <div class="history-list" id="history-list"></div>
+        </div>
+      </aside>
+    </main>
+    <div class="dialog-backdrop" id="parameter-help-dialog" hidden>
+      <section class="parameter-dialog ui-dialog" role="dialog" aria-modal="true" aria-labelledby="parameter-help-title">
+        <header>
+          <div><span>Parameter effects</span><code id="parameter-help-key">parameter</code><h2 id="parameter-help-title">Parameter</h2></div>
+          <button class="icon-button compact" id="close-parameter-help" type="button" aria-label="Close"><i data-lucide="x"></i></button>
+        </header>
+        <p class="parameter-dialog-summary" id="parameter-help-summary"></p>
+        <p class="parameter-dialog-detail" id="parameter-help-detail"></p>
+        <div class="parameter-impact-list">
+          <section><i data-lucide="arrow-up"></i><div><strong>Higher value or enabled</strong><p id="parameter-help-higher"></p></div></section>
+          <section><i data-lucide="arrow-down"></i><div><strong>Lower value or disabled</strong><p id="parameter-help-lower"></p></div></section>
+          <section><i data-lucide="gauge"></i><div><strong>Cost and risk</strong><p id="parameter-help-cost"></p></div></section>
+        </div>
+        <footer><span>Effects describe the current detector implementation.</span><button class="button primary" id="confirm-parameter-help" type="button">Understood</button></footer>
+      </section>
+    </div>
+    <div class="dialog-backdrop" id="debug-rename-dialog" hidden>
+      <form class="run-dialog ui-dialog" id="debug-rename-form" role="dialog" aria-modal="true" aria-labelledby="debug-rename-title">
+        <header>
+          <div><span>Display name</span><h2 id="debug-rename-title">Rename run</h2></div>
+          <button class="icon-button compact" id="close-debug-rename" type="button" aria-label="Close"><i data-lucide="x"></i></button>
+        </header>
+        <p>The technical identifier and run directory remain unchanged.</p>
+        <label for="debug-rename-input">New name
+          <input id="debug-rename-input" name="label" maxlength="80" required autocomplete="off">
+        </label>
+        <footer>
+          <button class="button subtle" id="cancel-debug-rename" type="button">Cancel</button>
+          <button class="button primary" type="submit">Rename</button>
+        </footer>
+      </form>
+    </div>
+    <div class="dialog-backdrop" id="step-help-dialog" hidden>
+      <section class="parameter-dialog ui-dialog step-help-dialog" role="dialog" aria-modal="true" aria-labelledby="step-help-title">
+        <header>
+          <div><span id="step-help-group">Keypoint pipeline</span><h2 id="step-help-title">Stage</h2></div>
+          <button class="icon-button compact" id="close-step-help" type="button" aria-label="Close"><i data-lucide="x"></i></button>
+        </header>
+        <p class="parameter-dialog-summary" id="step-help-description"></p>
+        <section class="step-help-metrics">
+          <div><span>Input</span><strong id="step-help-input">—</strong></div>
+          <div><span>Retained</span><strong id="step-help-kept">—</strong></div>
+          <div><span>Rejected</span><strong id="step-help-rejected">—</strong></div>
+        </section>
+        <div class="parameter-impact-list">
+          <section><i data-lucide="target"></i><div><strong>Relevance</strong><p id="step-help-assessment"></p></div></section>
+          <section><i data-lucide="scan-search"></i><div><strong>What to inspect</strong><p>Compare the positions of retained and rejected points across scenes, as well as their counts.</p></div></section>
+        </div>
+        <footer><span>Metrics are summed across the currently loaded scenes.</span><button class="button primary" id="confirm-step-help" type="button">Understood</button></footer>
+      </section>
+    </div>
+    <div class="tooltip ui-tooltip" id="tooltip" role="tooltip" hidden><strong></strong><span></span></div>
+    <div class="toast ui-toast" id="toast" role="status" hidden></div>
+  </div>
+  <script type="module" src="/debug_visualizer.js?v=20260910-selection-view-2"></script>
+</body>
+</html>

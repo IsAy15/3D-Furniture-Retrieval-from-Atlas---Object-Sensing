@@ -1,0 +1,45 @@
+__pycache__/
+*.py[cod]
+.pytest_cache/
+
+outputs/
+work/
+tmp/
+
+*.zip
+*.pkl
+*.ply
+*.obj
+*.pdf
+
+objectsensing_pipeline/db_dir/
+objectsensing_pipeline/data/
+
+# Python environments and developer caches
+.venv/
+venv/
+.mypy_cache/
+.ruff_cache/
+.coverage
+htmlcov/
+node_modules/
+
+# External inputs and generated numerical artifacts
+scenes/
+db_dir/
+data/
+*.npz
+*.npy
+*.aln
+*.log
+*.jsonl
+*.zip.sha256
+execution_parameters.json
+settings.json
+
+# Local secrets and machine-specific configuration
+.env
+.env.*
+!.env.example
+.DS_Store
+Thumbs.db

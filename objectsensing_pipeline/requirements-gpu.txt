@@ -1,0 +1,6 @@
+-r requirements.txt
+
+# Only the runtime and compiler components used by the TSDF array operations
+# are installed. The host still supplies the NVIDIA driver and GPU device.
+cupy-cuda12x==14.1.1
+cuda-toolkit[cudart,nvrtc]==12.9.2.0
